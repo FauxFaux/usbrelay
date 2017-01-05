@@ -24,7 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state);
 
 struct relay {
-    char this_serial[10];
+    char this_serial[20];
     unsigned char relay_num;
     unsigned char state;
     int found;

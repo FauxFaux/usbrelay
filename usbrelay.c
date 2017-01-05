@@ -21,8 +21,19 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 #include <stdlib.h>
 #include <hidapi/hidapi.h>
+#include <limits.h>
 #include "usbrelay.h"
 
+
+const char *state_name(unsigned char state) {
+   if (ON == state) {
+      return "on";
+   }
+   if (OFF == state) {
+      return "off";
+   }
+   return "[unknown code]";
+}
 
 int main(int argc, char *argv[]) {
    struct relay *relays = NULL;
@@ -55,24 +66,40 @@ int main(int argc, char *argv[]) {
       const char delimiters[] = "_=";
 
       char *token = strtok(arg_t, delimiters);
-      if (token != NULL) {
-         strcpy(relays[i].this_serial, token);
+      if (token == NULL) {
+         fprintf(stderr, "can't parse first part of argument: '%s'", arg_t);
+         goto fail;
       }
+      strcpy(relays[i].this_serial, token);
+
       token = strtok(NULL, delimiters);
-      if (token != NULL) {
-         relays[i].relay_num = atoi(token);
+      if (token == NULL) {
+         fprintf(stderr, "can't parse second part of argument: '%s'", arg_t);
+         goto fail;
       }
+
+      const long seen = atol(token);
+      if (seen > UCHAR_MAX) {
+         fprintf(stderr, "relay num must be less than %d (and probably a lot lower than that)", UCHAR_MAX);
+         goto fail;
+      }
+      relays[i].relay_num = (unsigned char) seen;
+
       token = strtok(NULL, delimiters);
-      if (token != NULL) {
-         if (atoi(token)) {
-            relays[i].state = ON;
-         } else {
-            relays[i].state = OFF;
-         }
+      if (token == NULL) {
+         fprintf(stderr, "can't parse second part of argument: '%s'", arg_t);
+         goto fail;
       }
-      fprintf(stderr, "Orig: %s, Serial: %s, Relay: %d State: %x\n", arg_t, relays[i].this_serial, relays[i].relay_num,
-              relays[i].state);
-      relays[i].found = 0;
+
+      if (atol(token)) {
+         relays[i].state = ON;
+      } else {
+         relays[i].state = OFF;
+      }
+
+      fprintf(stderr, "Orig: %s, Serial: %s, Relay: %d State: %s\n",
+              arg_t,
+              relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
    }
 
    product = getenv("USBID");
@@ -159,6 +186,10 @@ int main(int argc, char *argv[]) {
 
    free(relays);
    return exit_code;
+
+fail:
+   free(relays);
+   return 2;
 }
 
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state) {
