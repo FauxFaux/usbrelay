@@ -125,13 +125,20 @@ int main(int argc, char *argv[]) {
    struct hid_device_info *cur_dev = devs;
 
    while (cur_dev) {
-      fprintf(stderr, "Device Found\n  type: %04hx %04hx\n  path: %s\n  serial_number: %ls\n",
+      fprintf(stderr, " - device:\n"
+                    "           type: %04hx %04hx\n"
+                    "           path: %s\n"
+                    "  serial_number: %ls\n"
+                    "   manufacturer: %ls\n"
+                    "        product: %ls\n"
+                    "        release: %hx\n"
+                    "      interface: %d\n",
               cur_dev->vendor_id, cur_dev->product_id,
-              cur_dev->path, cur_dev->serial_number);
-      fprintf(stderr, "  Manufacturer: %ls\n", cur_dev->manufacturer_string);
-      fprintf(stderr, "  Product:      %ls\n", cur_dev->product_string);
-      fprintf(stderr, "  Release:      %hx\n", cur_dev->release_number);
-      fprintf(stderr, "  Interface:    %d\n", cur_dev->interface_number);
+              cur_dev->path, cur_dev->serial_number,
+              cur_dev->manufacturer_string,
+              cur_dev->product_string,
+              cur_dev->release_number,
+              cur_dev->interface_number);
 
       int num_relays = 0;
       {
@@ -148,13 +155,13 @@ int main(int argc, char *argv[]) {
             const long read = wcstol(num_start, &endptr, 10);
             if (read > 1 && read <= RELAY_MAX) {
                num_relays = (int) read;
-               fprintf(stderr, "  Number of Relays = %d (guessed based on product name)\n", num_relays);
+               fprintf(stderr, "    relay_count: %d (guessed based on product name)\n", num_relays);
             }
          }
 
          if (!num_relays) {
             num_relays = 2;
-            fprintf(stderr, "  Number of relays: = %d (couldn't extract from %ls, using default)\n",
+            fprintf(stderr, "    relay_count:  %d (couldn't extract from %ls, using default)\n",
                     num_relays, cur_dev->product_string);
          }
       }
