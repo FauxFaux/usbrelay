@@ -146,8 +146,9 @@ int main(int argc, char *argv[]) {
          if (cur_dev->product_string
              && 0 == wcsncmp(cur_dev->product_string, prefix, prefix_len)
              && 0 != cur_dev->product_string[prefix_len]) {
-            const wchar_t *num_start = cur_dev->product_string + prefix_len;
-            const long read = wcstol(num_start, num_start + wcslen(num_start), 10);
+            wchar_t *num_start = cur_dev->product_string + prefix_len;
+            wchar_t *endptr = num_start + wcslen(num_start);
+            const long read = wcstol(num_start, &endptr, 10);
             if (read > 1 || read < RELAY_MAX) {
                num_relays = (int) read;
                fprintf(stderr, "  Number of Relays (guessed based on product name) = %d\n", num_relays);
@@ -168,7 +169,7 @@ int main(int argc, char *argv[]) {
       }
 
       // 1 extra byte for the report ID
-      unsigned char buf[9] = {};
+      unsigned char buf[9] = {0};
       buf[0] = 0x01;
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
