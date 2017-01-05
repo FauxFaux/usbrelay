@@ -89,10 +89,6 @@ int main(int argc, char *argv[]) {
       } else {
          relays[i].state = RELAY_OFF;
       }
-
-      fprintf(stderr, "Orig: %s, Serial: %s, Relay: %d State: %s\n",
-              arg_t,
-              relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
    }
 
 
@@ -218,13 +214,12 @@ int main(int argc, char *argv[]) {
    hid_exit();
 
    for (int i = 1; i < argc; i++) {
-      fprintf(stderr, "Serial: %s, Relay: %d State: %x ", relays[i].this_serial, relays[i].relay_num, relays[i].state);
-      if (relays[i].found)
-         fprintf(stderr, "--- Found\n");
-      else {
-         fprintf(stderr, "--- Not Found\n");
-         exit_code++;
+      if (relays[i].found) {
+         continue;
       }
+      fprintf(stderr, "warning: unmatched request: %s, relay: %d, state: %s\n",
+              relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
+      exit_code++;
    }
 
    free(relays);
