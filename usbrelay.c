@@ -54,6 +54,17 @@ int main(int argc, char *argv[]) {
          continue;
       }
 
+      if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
+         printf("usage: %s [-v]\n"
+               "   Show the current status of all relays on all devices.\n\n"
+               "usage: %s [-v] FOO_1=1 [BAR_2=0 ...]\n"
+               "   Set relay '1' on device 'CODE' to on, and relay '2' on device 'FOO' to off, and...\n\n"
+               "Extra arguments:\n"
+               "  -v   verbose output\n", argv[0], argv[0]);
+
+         goto fail_to_parse;
+      }
+
       struct command *this_relay = commands + command_count;
       ++command_count;
 
