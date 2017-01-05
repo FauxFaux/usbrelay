@@ -21,7 +21,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define RELAY_ON 0xff
 #define RELAY_OFF 0xfd
 
-#define RELAY_MAX UCHAR_MAX
+#define RELAY_MAX 8
+
+#include <hidapi/hidapi.h>
 
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state);
 
@@ -29,6 +31,6 @@ struct relay {
     char this_serial[20];
     unsigned char relay_num;
     unsigned char state;
-    int found;
+    bool found;
 };
 	

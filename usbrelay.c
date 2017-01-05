@@ -20,8 +20,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <wchar.h>
 #include <string.h>
 #include <stdlib.h>
-#include <hidapi/hidapi.h>
 #include <limits.h>
+#include <stdbool.h>
+
 #include "usbrelay.h"
 
 
@@ -37,16 +38,15 @@ const char *state_name(unsigned char state) {
 
 int main(int argc, char *argv[]) {
    struct relay *relays = NULL;
-
-   int debug = 0;
    int exit_code = 0;
 
-   /* allocate the memory for all the relays */
    if (argc > 1) {
-      /* Yeah, I know. Not using the first member */
+      // first member is ignored everywhere
       relays = calloc(argc + 1, sizeof(struct relay));
-   } else {
-      debug = 1;
+      if (!relays) {
+         fprintf(stderr, "couldn't allocate\n");
+         return 2;
+      }
    }
 
    /* loop through the command line and grab the relay details */
@@ -124,6 +124,7 @@ int main(int argc, char *argv[]) {
       product_id = (unsigned short) second;
    }
 
+
    struct hid_device_info *const devs = hid_enumerate(vendor_id, product_id);
    struct hid_device_info *cur_dev = devs;
 
@@ -149,16 +150,16 @@ int main(int argc, char *argv[]) {
             wchar_t *num_start = cur_dev->product_string + prefix_len;
             wchar_t *endptr = num_start + wcslen(num_start);
             const long read = wcstol(num_start, &endptr, 10);
-            if (read > 1 || read < RELAY_MAX) {
+            if (read > 1 && read <= RELAY_MAX) {
                num_relays = (int) read;
-               fprintf(stderr, "  Number of Relays (guessed based on product name) = %d\n", num_relays);
+               fprintf(stderr, "  Number of Relays = %d (guessed based on product name)\n", num_relays);
             }
          }
 
          if (!num_relays) {
             num_relays = 2;
-            fprintf(stderr, "  Number of relays: couldn't extract from %ls, using default = %d\n",
-                    cur_dev->product_string, num_relays);
+            fprintf(stderr, "  Number of relays: = %d (couldn't extract from %ls, using default)\n",
+                    num_relays, cur_dev->product_string);
          }
       }
 
@@ -171,16 +172,19 @@ int main(int argc, char *argv[]) {
       // 1 extra byte for the report ID
       unsigned char buf[9] = {0};
       buf[0] = 0x01;
+
+      // this is documented to *not* overwrite the report id, and to start at buf[1]. However, it doesn't.
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
-         perror("hid_get_feature_report");
+         fprintf(stderr, "hid_get_feature_report failed: %ls\n", hid_error(handle));
          hid_close(handle);
          return 1;
       }
 
-      if (debug) {
-         fprintf(stderr, "buf: %s\n", buf);
+      buf[sizeof(buf) - 1] = '\0';
 
+      if (!relays) {
+         // we've not been asked to change anything, so just output the data
          for (int i = 0; i < num_relays; i++) {
             if (buf[7] & (1 << i)) {
                printf("%s_%d=1\n", buf, i + 1);
@@ -190,28 +194,27 @@ int main(int argc, char *argv[]) {
          }
       }
 
-      /* loop through the supplied command line and try to match the serial */
+      // loop through the supplied command line and try to match the serial
       for (int i = 1; i < argc; i++) {
-         fprintf(stderr, "Serial: %s, Relay: %d State: %x \n",
-                 relays[i].this_serial, relays[i].relay_num, relays[i].state);
-
-         if (!strcmp(relays[i].this_serial, (const char *) buf)) {
-
-            if (operate_relay(handle, relays[i].relay_num, relays[i].state) < 0) {
-               exit_code++;
-            }
-
-            relays[i].found = 1;
+         if (strcmp(relays[i].this_serial, (const char *) buf)) {
+            continue;
          }
+
+         if (operate_relay(handle, relays[i].relay_num, relays[i].state) < 0) {
+            exit_code++;
+         }
+
+         relays[i].found = true;
       }
 
       hid_close(handle);
       fprintf(stderr, "\n");
       cur_dev = cur_dev->next;
    }
+
    hid_free_enumeration(devs);
 
-   /* Free static HIDAPI objects. */
+   // Free static HIDAPI objects.
    hid_exit();
 
    for (int i = 1; i < argc; i++) {
@@ -233,22 +236,11 @@ int main(int argc, char *argv[]) {
 }
 
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state) {
-   unsigned char buf[9];// 1 extra byte for the report ID
-   int res;
-
-   buf[0] = 0x0; //report number
-   buf[1] = state;
-   buf[2] = relay;
-   buf[3] = 0x00;
-   buf[4] = 0x00;
-   buf[5] = 0x00;
-   buf[6] = 0x00;
-   buf[7] = 0x00;
-   buf[8] = 0x00;
-   res = hid_write(handle, buf, sizeof(buf));
+   const unsigned char report_number = 0x0;
+   unsigned char buf[9] = {report_number, state, relay};
+   const int res = hid_write(handle, buf, sizeof(buf));
    if (res < 0) {
-      fprintf(stderr, "Unable to write()\n");
-      fprintf(stderr, "Error: %ls\n", hid_error(handle));
+      fprintf(stderr, "hid_write failed: %ls\n", hid_error(handle));
    }
    return (res);
 }
