@@ -18,8 +18,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 /* relay.h */
 
-#define ON 0xff
-#define OFF 0xfd
+#define RELAY_ON 0xff
+#define RELAY_OFF 0xfd
+
+#define RELAY_MAX UCHAR_MAX
 
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state);
 

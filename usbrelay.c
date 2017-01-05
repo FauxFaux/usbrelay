@@ -26,10 +26,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 
 const char *state_name(unsigned char state) {
-   if (ON == state) {
+   if (RELAY_ON == state) {
       return "on";
    }
-   if (OFF == state) {
+   if (RELAY_OFF == state) {
       return "off";
    }
    return "[unknown code]";
@@ -37,11 +37,8 @@ const char *state_name(unsigned char state) {
 
 int main(int argc, char *argv[]) {
    struct relay *relays = NULL;
-   unsigned char buf[9]; // 1 extra byte for the report ID
 
    int debug = 0;
-   int num_relays = 2;
-   int i;
    int exit_code = 0;
 
    /* allocate the memory for all the relays */
@@ -53,7 +50,7 @@ int main(int argc, char *argv[]) {
    }
 
    /* loop through the command line and grab the relay details */
-   for (i = 1; i < argc; i++) {
+   for (int i = 1; i < argc; i++) {
       /* copy the arg and bounds check */
       char arg_t[20] = {'\0'};
       strncpy(arg_t, argv[i], sizeof(arg_t) - 1);
@@ -88,9 +85,9 @@ int main(int argc, char *argv[]) {
       }
 
       if (atol(token)) {
-         relays[i].state = ON;
+         relays[i].state = RELAY_ON;
       } else {
-         relays[i].state = OFF;
+         relays[i].state = RELAY_OFF;
       }
 
       fprintf(stderr, "Orig: %s, Serial: %s, Relay: %d State: %s\n",
@@ -139,9 +136,30 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "  Release:      %hx\n", cur_dev->release_number);
       fprintf(stderr, "  Interface:    %d\n", cur_dev->interface_number);
 
-      // The product string is USBRelayx where x is number of relays read to the \0 in case there are more than 9
-      num_relays = atoi((const char *) &cur_dev->product_string[8]);
-      fprintf(stderr, "  Number of Relays = %d\n", num_relays);
+      int num_relays = 0;
+      {
+         // The product string is USBRelayx where x is number of relays read
+         // comment not understood: "to the \0 in case there are more than 9"
+         const wchar_t *prefix = L"USBRelay";
+         const size_t prefix_len = wcslen(prefix);
+
+         if (cur_dev->product_string
+             && 0 == wcsncmp(cur_dev->product_string, prefix, prefix_len)
+             && 0 != cur_dev->product_string[prefix_len]) {
+            const wchar_t *num_start = cur_dev->product_string + prefix_len;
+            const long read = wcstol(num_start, num_start + wcslen(num_start), 10);
+            if (read > 1 || read < RELAY_MAX) {
+               num_relays = (int) read;
+               fprintf(stderr, "  Number of Relays (guessed based on product name) = %d\n", num_relays);
+            }
+         }
+
+         if (!num_relays) {
+            num_relays = 2;
+            fprintf(stderr, "  Number of relays: couldn't extract from %ls, using default = %d\n",
+                    cur_dev->product_string, num_relays);
+         }
+      }
 
       hid_device *handle = hid_open_path(cur_dev->path);
       if (!handle) {
@@ -149,6 +167,8 @@ int main(int argc, char *argv[]) {
          return 1;
       }
 
+      // 1 extra byte for the report ID
+      unsigned char buf[9] = {};
       buf[0] = 0x01;
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
@@ -157,10 +177,11 @@ int main(int argc, char *argv[]) {
          return 1;
       }
 
-
       if (debug) {
-         for (i = 0; i < num_relays; i++) {
-            if (buf[7] & 1 << i) {
+         fprintf(stderr, "buf: %s\n", buf);
+
+         for (int i = 0; i < num_relays; i++) {
+            if (buf[7] & (1 << i)) {
                printf("%s_%d=1\n", buf, i + 1);
             } else {
                printf("%s_%d=0\n", buf, i + 1);
@@ -169,18 +190,20 @@ int main(int argc, char *argv[]) {
       }
 
       /* loop through the supplied command line and try to match the serial */
-      for (i = 1; i < argc; i++) {
-         fprintf(stderr, "Serial: %s, Relay: %d State: %x \n", relays[i].this_serial, relays[i].relay_num,
-                 relays[i].state);
+      for (int i = 1; i < argc; i++) {
+         fprintf(stderr, "Serial: %s, Relay: %d State: %x \n",
+                 relays[i].this_serial, relays[i].relay_num, relays[i].state);
+
          if (!strcmp(relays[i].this_serial, (const char *) buf)) {
-            fprintf(stderr, "%d HID Serial: %s ", i, buf);
-            fprintf(stderr, "Serial: %s, Relay: %d State: %x\n", relays[i].this_serial, relays[i].relay_num,
-                    relays[i].state);
-            if (operate_relay(handle, relays[i].relay_num, relays[i].state) < 0)
+
+            if (operate_relay(handle, relays[i].relay_num, relays[i].state) < 0) {
                exit_code++;
+            }
+
             relays[i].found = 1;
          }
       }
+
       hid_close(handle);
       fprintf(stderr, "\n");
       cur_dev = cur_dev->next;
@@ -190,7 +213,7 @@ int main(int argc, char *argv[]) {
    /* Free static HIDAPI objects. */
    hid_exit();
 
-   for (i = 1; i < argc; i++) {
+   for (int i = 1; i < argc; i++) {
       fprintf(stderr, "Serial: %s, Relay: %d State: %x ", relays[i].this_serial, relays[i].relay_num, relays[i].state);
       if (relays[i].found)
          fprintf(stderr, "--- Found\n");
