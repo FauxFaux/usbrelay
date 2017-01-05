@@ -4,13 +4,13 @@ project(usbrelay)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HIDAPI hidapi-libusb REQUIRED)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} \
- -std=gnu11 \
- -Wall \
- -Wextra \
- -pedantic \
- -fsanitize=address \
- -D_XOPEN_SOURCE=500 -D_DEFAULT_SOURCE")
+if (CMAKE_COMPILER_IS_GNUCC)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} \
+     -std=gnu11 \
+     -Wall -Wextra -pedantic \
+     -fsanitize=address \
+     -D_XOPEN_SOURCE=500 -D_DEFAULT_SOURCE")
+endif(CMAKE_COMPILER_IS_GNUCC)
 
 add_executable(usbrelay usbrelay.c)
 target_link_libraries(usbrelay ${HIDAPI_LIBRARIES})
