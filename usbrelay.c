@@ -59,28 +59,31 @@ int main(int argc, char *argv[]) {
       const char delimiters[] = "_=";
 
       char *token = strtok(arg_t, delimiters);
+      const char *const generic_parse_error_message = "error: arguments should look like 'FOO_1=0', this doesn't: '%s'\n";
       if (token == NULL) {
-         fprintf(stderr, "can't parse first part of argument: '%s'\n", arg_t);
+         fprintf(stderr, generic_parse_error_message, arg_t);
          goto fail_to_parse;
       }
       strcpy(relays[i].this_serial, token);
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
-         fprintf(stderr, "can't parse second part of argument: '%s'\n", arg_t);
+         fprintf(stderr, generic_parse_error_message, arg_t);
          goto fail_to_parse;
       }
 
       const long seen = atol(token);
       if (seen < 0 || seen > UCHAR_MAX) {
-         fprintf(stderr, "relay num must be less than %d (and probably a lot lower than that)\n", UCHAR_MAX);
+         fprintf(stderr, "error: relay num must be less than %d (and probably a lot lower than that),"
+               " your value was read as %ld from '%s'\n",
+                 UCHAR_MAX, seen, token);
          goto fail_to_parse;
       }
       relays[i].relay_num = (unsigned char) seen;
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
-         fprintf(stderr, "can't parse second part of argument: '%s'\n", arg_t);
+         fprintf(stderr, generic_parse_error_message, arg_t);
          goto fail_to_parse;
       }
 
@@ -102,7 +105,7 @@ int main(int argc, char *argv[]) {
       const char *vendor = strsep(&split, ":");
 
       if (!vendor || !*vendor || !split || !*split) {
-         fprintf(stderr, "invalid format for USBID, expecting 'abcd:ef12': '%s'\n", usb_id);
+         fprintf(stderr, "error: invalid format for USBID, expecting 'abcd:ef12': '%s'\n", usb_id);
          free(orig);
          goto fail_to_parse;
       }
@@ -112,7 +115,7 @@ int main(int argc, char *argv[]) {
       free(orig);
 
       if (first < 0 || first > USHRT_MAX || second < 0 || second > USHRT_MAX) {
-         fprintf(stderr, "invalid USBID, numbers are out of range: '%s'\n", usb_id);
+         fprintf(stderr, "error: invalid USBID, numbers are out of range: '%s'\n", usb_id);
          goto fail_to_parse;
       }
 
@@ -168,7 +171,7 @@ int main(int argc, char *argv[]) {
 
       hid_device *handle = hid_open_path(cur_dev->path);
       if (!handle) {
-         perror("unable to open device");
+         perror("error: unable to open device");
          return 1;
       }
 
@@ -179,7 +182,7 @@ int main(int argc, char *argv[]) {
       // this is documented to *not* overwrite the report id, and to start at buf[1]. However, it doesn't.
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
-         fprintf(stderr, "hid_get_feature_report failed: %ls\n", hid_error(handle));
+         fprintf(stderr, "error: hid_get_feature_report failed: %ls\n", hid_error(handle));
          hid_close(handle);
          return 1;
       }
@@ -224,7 +227,7 @@ int main(int argc, char *argv[]) {
       if (relays[i].found) {
          continue;
       }
-      fprintf(stderr, "warning: unmatched request: %s, relay: %d, state: %s\n",
+      fprintf(stderr, "warning: unmatched request: serial: %s, relay: %d, state: %s\n",
               relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
       exit_code++;
    }
@@ -242,7 +245,7 @@ int operate_relay(hid_device *handle, unsigned char relay, unsigned char state) 
    unsigned char buf[9] = {report_number, state, relay};
    const int res = hid_write(handle, buf, sizeof(buf));
    if (res < 0) {
-      fprintf(stderr, "hid_write failed: %ls\n", hid_error(handle));
+      fprintf(stderr, "error: hid_write failed: %ls\n", hid_error(handle));
    }
    return (res);
 }
