@@ -42,10 +42,6 @@ int main(int argc, char *argv[]) {
    int debug = 0;
    int num_relays = 2;
    int i;
-   struct hid_device_info *devs, *cur_dev;
-   unsigned short vendor_id = 0x16c0;
-   unsigned short product_id = 0x05df;
-   char *vendor, *product;
    int exit_code = 0;
 
    /* allocate the memory for all the relays */
@@ -67,28 +63,28 @@ int main(int argc, char *argv[]) {
 
       char *token = strtok(arg_t, delimiters);
       if (token == NULL) {
-         fprintf(stderr, "can't parse first part of argument: '%s'", arg_t);
-         goto fail;
+         fprintf(stderr, "can't parse first part of argument: '%s'\n", arg_t);
+         goto fail_to_parse;
       }
       strcpy(relays[i].this_serial, token);
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
-         fprintf(stderr, "can't parse second part of argument: '%s'", arg_t);
-         goto fail;
+         fprintf(stderr, "can't parse second part of argument: '%s'\n", arg_t);
+         goto fail_to_parse;
       }
 
       const long seen = atol(token);
-      if (seen > UCHAR_MAX) {
-         fprintf(stderr, "relay num must be less than %d (and probably a lot lower than that)", UCHAR_MAX);
-         goto fail;
+      if (seen < 0 || seen > UCHAR_MAX) {
+         fprintf(stderr, "relay num must be less than %d (and probably a lot lower than that)\n", UCHAR_MAX);
+         goto fail_to_parse;
       }
       relays[i].relay_num = (unsigned char) seen;
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
-         fprintf(stderr, "can't parse second part of argument: '%s'", arg_t);
-         goto fail;
+         fprintf(stderr, "can't parse second part of argument: '%s'\n", arg_t);
+         goto fail_to_parse;
       }
 
       if (atol(token)) {
@@ -102,23 +98,42 @@ int main(int argc, char *argv[]) {
               relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
    }
 
-   product = getenv("USBID");
-   if (product != NULL) {
-      vendor = strsep(&product, ":");
-      if (vendor && *vendor) {
-         vendor_id = strtol(vendor, NULL, 16);
-      }
-      if (product && *product) {
-         product_id = strtol(product, NULL, 16);
-      }
-   }
-   devs = hid_enumerate(vendor_id, product_id);
 
-   cur_dev = devs;
+   unsigned short vendor_id = 0x16c0;
+   unsigned short product_id = 0x05df;
+
+   const char *usb_id = getenv("USBID");
+   if (usb_id != NULL) {
+      char *split = strdup(usb_id);
+      char *const orig = split;
+      const char *vendor = strsep(&split, ":");
+
+      if (!vendor || !*vendor || !split || !*split) {
+         fprintf(stderr, "invalid format for USBID, expecting 'abcd:ef12': '%s'\n", usb_id);
+         free(orig);
+         goto fail_to_parse;
+      }
+
+      long first = strtol(vendor, NULL, 16);
+      long second = strtol(split, NULL, 16);
+      free(orig);
+
+      if (first < 0 || first > USHRT_MAX || second < 0 || second > USHRT_MAX) {
+         fprintf(stderr, "invalid USBID, numbers are out of range: '%s'\n", usb_id);
+         goto fail_to_parse;
+      }
+
+      vendor_id = (unsigned short) first;
+      product_id = (unsigned short) second;
+   }
+
+   struct hid_device_info *const devs = hid_enumerate(vendor_id, product_id);
+   struct hid_device_info *cur_dev = devs;
+
    while (cur_dev) {
-      fprintf(stderr, "Device Found\n  type: %04hx %04hx\n  path: %s\n  serial_number: %ls", cur_dev->vendor_id,
-              cur_dev->product_id, cur_dev->path, cur_dev->serial_number);
-      fprintf(stderr, "\n");
+      fprintf(stderr, "Device Found\n  type: %04hx %04hx\n  path: %s\n  serial_number: %ls\n",
+              cur_dev->vendor_id, cur_dev->product_id,
+              cur_dev->path, cur_dev->serial_number);
       fprintf(stderr, "  Manufacturer: %ls\n", cur_dev->manufacturer_string);
       fprintf(stderr, "  Product:      %ls\n", cur_dev->product_string);
       fprintf(stderr, "  Release:      %hx\n", cur_dev->release_number);
@@ -138,7 +153,8 @@ int main(int argc, char *argv[]) {
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
          perror("hid_get_feature_report");
-         exit(1);
+         hid_close(handle);
+         return 1;
       }
 
 
@@ -187,7 +203,7 @@ int main(int argc, char *argv[]) {
    free(relays);
    return exit_code;
 
-fail:
+   fail_to_parse:
    free(relays);
    return 2;
 }
