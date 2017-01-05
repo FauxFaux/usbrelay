@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
 
       hid_device *handle = hid_open_path(cur_dev->path);
       if (!handle) {
-         fprintf(stderr, "unable to open device\n");
+         perror("unable to open device");
          return 1;
       }
 
