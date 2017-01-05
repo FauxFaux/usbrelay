@@ -25,38 +25,40 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 
 int main(int argc, char *argv[]) {
-   struct relay *relays = 0;
-   unsigned char buf[9];// 1 extra byte for the report ID
-   char arg_t[20] = {'\0'};
+   struct relay *relays = NULL;
+   unsigned char buf[9]; // 1 extra byte for the report ID
+
    int debug = 0;
    int num_relays = 2;
-   char *token;
-   const char delimiters[] = "_=";
    int i;
    struct hid_device_info *devs, *cur_dev;
-   hid_device *handle;
-   int size = sizeof(struct relay);
    unsigned short vendor_id = 0x16c0;
    unsigned short product_id = 0x05df;
    char *vendor, *product;
    int exit_code = 0;
 
-   /* allocate the memeory for all the relays */
+   /* allocate the memory for all the relays */
    if (argc > 1) {
-      relays = malloc(size * (argc + 1)); /* Yeah, I know. Not using the first member */
-      relays[0].this_serial[0] = '\0';
-   } else debug = 1;
+      /* Yeah, I know. Not using the first member */
+      relays = calloc(argc + 1, sizeof(struct relay));
+   } else {
+      debug = 1;
+   }
 
    /* loop through the command line and grab the relay details */
    for (i = 1; i < argc; i++) {
       /* copy the arg and bounds check */
-      strncpy(arg_t, argv[i], 19);
-      arg_t[19] = '\0';
-      token = strtok(arg_t, delimiters);
+      char arg_t[20] = {'\0'};
+      strncpy(arg_t, argv[i], sizeof(arg_t) - 1);
+      arg_t[sizeof(arg_t) - 1] = '\0';
+
+      const char delimiters[] = "_=";
+
+      char *token = strtok(arg_t, delimiters);
       if (token != NULL) {
          strcpy(relays[i].this_serial, token);
       }
-      token = strtok((char *) NULL, delimiters);
+      token = strtok(NULL, delimiters);
       if (token != NULL) {
          relays[i].relay_num = atoi(token);
       }
@@ -99,11 +101,12 @@ int main(int argc, char *argv[]) {
       num_relays = atoi((const char *) &cur_dev->product_string[8]);
       fprintf(stderr, "  Number of Relays = %d\n", num_relays);
 
-      handle = hid_open_path(cur_dev->path);
+      hid_device *handle = hid_open_path(cur_dev->path);
       if (!handle) {
          fprintf(stderr, "unable to open device\n");
          return 1;
       }
+
       buf[0] = 0x01;
       int ret = hid_get_feature_report(handle, buf, sizeof(buf));
       if (ret == -1) {
@@ -154,9 +157,8 @@ int main(int argc, char *argv[]) {
       }
    }
 
-   if (relays)
-      free(relays);
-   exit(exit_code);
+   free(relays);
+   return exit_code;
 }
 
 int operate_relay(hid_device *handle, unsigned char relay, unsigned char state) {
