@@ -37,21 +37,26 @@ const char *state_name(unsigned char state) {
 }
 
 int main(int argc, char *argv[]) {
-   struct relay *relays = NULL;
-   int exit_code = 0;
-
-   if (argc > 1) {
-      // first member is ignored everywhere
-      relays = calloc(argc + 1, sizeof(struct relay));
-      if (!relays) {
-         fprintf(stderr, "couldn't allocate\n");
-         return 2;
-      }
+   struct command *commands = calloc(argc, sizeof(struct command));
+   if (!commands) {
+      perror("allocation failed");
+      return 2;
    }
 
-   /* loop through the command line and grab the relay details */
+   int command_count = 0;
+   bool verbose = false;
+
+   // loop through the command line and grab the relay details
    for (int i = 1; i < argc; i++) {
-      /* copy the arg and bounds check */
+
+      if (!strcmp("-v", argv[i])) {
+         verbose = true;
+         continue;
+      }
+
+      struct command *this_relay = commands + command_count;
+      ++command_count;
+
       char arg_t[20] = {'\0'};
       strncpy(arg_t, argv[i], sizeof(arg_t) - 1);
       arg_t[sizeof(arg_t) - 1] = '\0';
@@ -64,7 +69,7 @@ int main(int argc, char *argv[]) {
          fprintf(stderr, generic_parse_error_message, arg_t);
          goto fail_to_parse;
       }
-      strcpy(relays[i].this_serial, token);
+      strcpy(this_relay->this_serial, token);
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
@@ -79,7 +84,7 @@ int main(int argc, char *argv[]) {
                  UCHAR_MAX, seen, token);
          goto fail_to_parse;
       }
-      relays[i].relay_num = (unsigned char) seen;
+      this_relay->relay_num = (unsigned char) seen;
 
       token = strtok(NULL, delimiters);
       if (token == NULL) {
@@ -88,9 +93,9 @@ int main(int argc, char *argv[]) {
       }
 
       if (atol(token)) {
-         relays[i].state = RELAY_ON;
+         this_relay->state = RELAY_ON;
       } else {
-         relays[i].state = RELAY_OFF;
+         this_relay->state = RELAY_OFF;
       }
    }
 
@@ -101,6 +106,10 @@ int main(int argc, char *argv[]) {
    const char *usb_id = getenv("USBID");
    if (usb_id != NULL) {
       char *split = strdup(usb_id);
+      if (!split) {
+         perror("allocation failed");
+         goto fail_to_parse;
+      }
       char *const orig = split;
       const char *vendor = strsep(&split, ":");
 
@@ -123,25 +132,27 @@ int main(int argc, char *argv[]) {
       product_id = (unsigned short) second;
    }
 
-
+   int exit_code = 0;
    struct hid_device_info *const devs = hid_enumerate(vendor_id, product_id);
    struct hid_device_info *cur_dev = devs;
 
    while (cur_dev) {
-      fprintf(stderr, " - device:\n"
-                    "           type: %04hx %04hx\n"
-                    "           path: %s\n"
-                    "  serial_number: %ls\n"
-                    "   manufacturer: %ls\n"
-                    "        product: %ls\n"
-                    "        release: %hx\n"
-                    "      interface: %d\n",
-              cur_dev->vendor_id, cur_dev->product_id,
-              cur_dev->path, cur_dev->serial_number,
-              cur_dev->manufacturer_string,
-              cur_dev->product_string,
-              cur_dev->release_number,
-              cur_dev->interface_number);
+      if (verbose) {
+         fprintf(stderr, " - device:\n"
+                       "           type: %04hx %04hx\n"
+                       "           path: %s\n"
+                       "  serial_number: %ls\n"
+                       "   manufacturer: %ls\n"
+                       "        product: %ls\n"
+                       "        release: %hx\n"
+                       "      interface: %d\n",
+                 cur_dev->vendor_id, cur_dev->product_id,
+                 cur_dev->path, cur_dev->serial_number,
+                 cur_dev->manufacturer_string,
+                 cur_dev->product_string,
+                 cur_dev->release_number,
+                 cur_dev->interface_number);
+      }
 
       int num_relays = 0;
       {
@@ -158,7 +169,9 @@ int main(int argc, char *argv[]) {
             const long read = wcstol(num_start, &endptr, 10);
             if (read > 1 && read <= RELAY_MAX) {
                num_relays = (int) read;
-               fprintf(stderr, "    relay_count: %d (guessed based on product name)\n", num_relays);
+               if (verbose) {
+                  fprintf(stderr, "    relay_count: %d (guessed based on product name)\n", num_relays);
+               }
             }
          }
 
@@ -189,7 +202,7 @@ int main(int argc, char *argv[]) {
 
       buf[sizeof(buf) - 1] = '\0';
 
-      if (!relays) {
+      if (0 == command_count) {
          // we've not been asked to change anything, so just output the data
          for (int i = 0; i < num_relays; i++) {
             if (buf[7] & (1 << i)) {
@@ -201,16 +214,16 @@ int main(int argc, char *argv[]) {
       }
 
       // loop through the supplied command line and try to match the serial
-      for (int i = 1; i < argc; i++) {
-         if (strcmp(relays[i].this_serial, (const char *) buf)) {
+      for (int i = 0; i < command_count; i++) {
+         if (strcmp(commands[i].this_serial, (const char *) buf)) {
             continue;
          }
 
-         if (operate_relay(handle, relays[i].relay_num, relays[i].state) < 0) {
+         if (operate_relay(handle, commands[i].relay_num, commands[i].state) < 0) {
             exit_code++;
          }
 
-         relays[i].found = true;
+         commands[i].executed = true;
       }
 
       hid_close(handle);
@@ -223,20 +236,20 @@ int main(int argc, char *argv[]) {
    // Free static HIDAPI objects.
    hid_exit();
 
-   for (int i = 1; i < argc; i++) {
-      if (relays[i].found) {
+   for (int i = 0; i < command_count; i++) {
+      if (commands[i].executed) {
          continue;
       }
       fprintf(stderr, "warning: unmatched request: serial: %s, relay: %d, state: %s\n",
-              relays[i].this_serial, relays[i].relay_num, state_name(relays[i].state));
+              commands[i].this_serial, commands[i].relay_num, state_name(commands[i].state));
       exit_code++;
    }
 
-   free(relays);
+   free(commands);
    return exit_code;
 
    fail_to_parse:
-   free(relays);
+   free(commands);
    return 2;
 }
 
